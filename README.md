@@ -13,7 +13,7 @@
 
 ---
 
-## ✨ Features
+## Features
 
 - **Accurate psychrometrics** – every state point and contour is calculated via psychrolib, matching ASHRAE Fundamentals.
 - **Interactive charting** – zoom, pan, hover crosshair, and click-to-lock markers with millidegree/hour precision.
@@ -21,7 +21,7 @@
 - **Unit-aware UI** – instantly flip between SI and IP units; all inputs and outputs update in sync.
 - **Responsive dark UI** – AMOLED-ready layout with condensed control panel and live property table.
 
-## 🚀 Getting Started
+## Getting Started
 
 Clone the repository and install dependencies:
 
@@ -45,16 +45,7 @@ Visit [http://localhost:3000](http://localhost:3000) to explore the chart.
 - [Tailwind CSS](https://tailwindcss.com/) + [shadcn/ui](https://ui.shadcn.com/) for styling
 - [framer-motion](https://www.framer.com/motion/) for subtle animations
 
-## 🧪 Scripts
-
-| Command           | Description                     |
-| ----------------- | ------------------------------- |
-| `npm run dev`   | Start the dev server            |
-| `npm run lint`  | Lint the project with ESLint    |
-| `npm run build` | Create a production build       |
-| `npm run start` | Run the built production server |
-
-## 📁 Project Structure
+## Project Structure
 
 ```
 ├─ app/
@@ -69,11 +60,7 @@ Visit [http://localhost:3000](http://localhost:3000) to explore the chart.
 └─ README.md
 ```
 
-## 🤝 Contributing
-
-Issues and pull requests are welcome! Feel free to open a discussion if you have ideas for new overlays, performance improvements, or UI polish.
-
-## 📜 License
+## License
 
 This project is released under the MIT License. See [`LICENSE`](LICENSE) for details.
 
