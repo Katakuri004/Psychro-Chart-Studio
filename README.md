@@ -47,12 +47,12 @@ Visit [http://localhost:3000](http://localhost:3000) to explore the chart.
 
 ## 🧪 Scripts
 
-| Command            | Description                         |
-| ------------------ | ----------------------------------- |
-| `npm run dev`      | Start the dev server                 |
-| `npm run lint`     | Lint the project with ESLint         |
-| `npm run build`    | Create a production build            |
-| `npm run start`    | Run the built production server      |
+| Command           | Description                     |
+| ----------------- | ------------------------------- |
+| `npm run dev`   | Start the dev server            |
+| `npm run lint`  | Lint the project with ESLint    |
+| `npm run build` | Create a production build       |
+| `npm run start` | Run the built production server |
 
 ## 📁 Project Structure
 
@@ -79,4 +79,4 @@ This project is released under the MIT License. See [`LICENSE`](LICENSE) for det
 
 ---
 
-Made with ❤️ by [Arpit Kumar](https://github.com/Katakuri004)
+Made with ❤️ by [Katakuri](https://github.com/Katakuri004)
