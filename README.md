@@ -66,4 +66,4 @@ This project is released under the MIT License. See [`LICENSE`](LICENSE) for det
 
 ---
 
-Made with ❤️ by [Katakuri](https://github.com/Katakuri004)
+Made by [Katakuri](https://github.com/Katakuri004)
