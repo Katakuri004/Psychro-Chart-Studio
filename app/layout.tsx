@@ -20,7 +20,7 @@ export const metadata: Metadata = {
     "Interactive psychrometric chart explorer for HVAC engineers and data-driven designers.",
   icons: {
     icon: "/favicon.png",
-    shortcut: "/favicon.png",
+    shortcut: "public/favicon.png",
   },
 };
 

@@ -38,6 +38,21 @@ import {
 
 const MARGINS = { top: 32, right: 36, bottom: 68, left: 88 } as const;
 
+type ChartMarker = {
+  id: string;
+  label: string;
+  color: string;
+  dryBulb: number;
+  humidityRatio: number;
+};
+
+type ChartProcessLine = {
+  id: string;
+  color: string;
+  label: string;
+  points: Array<{ dryBulb: number; humidityRatio: number }>;
+};
+
 export interface PsychroChartProps {
   unitSystem: UnitSystem;
   pressure: number;
@@ -45,6 +60,8 @@ export interface PsychroChartProps {
   onSelectState?: (state: PsychroState) => void;
   zoomLocked?: boolean;
   showHoverCrosshair?: boolean;
+  statePoints?: ChartMarker[];
+  processes?: ChartProcessLine[];
 }
 
 const useContainerSize = () => {
@@ -80,6 +97,8 @@ export function PsychroChart({
   onSelectState,
   zoomLocked = false,
   showHoverCrosshair = true,
+  statePoints = [],
+  processes = [],
 }: PsychroChartProps) {
   const { ref: containerRef, width, height } = useContainerSize();
   const svgRef = useRef<SVGSVGElement>(null);
@@ -525,6 +544,14 @@ export function PsychroChart({
     [unitSystem, xScale, yScale]
   );
 
+  const processLineGenerator = useMemo(
+    () =>
+      line<{ dryBulb: number; humidityRatio: number }>()
+        .x((d) => xScale(d.dryBulb))
+        .y((d) => yScale(humidityRatioToDisplay(unitSystem, d.humidityRatio))),
+    [unitSystem, xScale, yScale]
+  );
+
   const saturationAreaPath = useMemo(() => {
     if (!hasSize) return null;
     const generator = area<{ dryBulb: number; humidityRatio: number }>()
@@ -770,6 +797,50 @@ export function PsychroChart({
                 />
               ) : null
             )}
+
+            {processes.map((process) => {
+              if (process.points.length < 2) return null;
+              const d = processLineGenerator(process.points);
+              if (!d) return null;
+              return (
+                <path
+                  key={process.id}
+                  d={d}
+                  fill="none"
+                  stroke={process.color}
+                  strokeWidth={2}
+                  strokeOpacity={0.85}
+                  clipPath="url(#chart-clip)"
+                />
+              );
+            })}
+
+            {statePoints.map((point) => {
+              const xPosition = xScale(point.dryBulb);
+              const yPosition = yScale(
+                humidityRatioToDisplay(unitSystem, point.humidityRatio)
+              );
+              return (
+                <g key={point.id} className="pointer-events-none">
+                  <circle
+                    cx={xPosition}
+                    cy={yPosition}
+                    r={5}
+                    fill={point.color}
+                    stroke="#0f172a"
+                    strokeWidth={1.2}
+                  />
+                  <text
+                    x={xPosition + 8}
+                    y={yPosition - 8}
+                    fill="#ffffff"
+                    fontSize={11}
+                  >
+                    {point.label}
+                  </text>
+                </g>
+              );
+            })}
 
             {markerPosition && (
               <g className="pointer-events-none">

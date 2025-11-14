@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PsychroChart } from "@/components/psychro-chart";
 import {
   DEFAULT_INPUTS,
@@ -68,6 +69,56 @@ const FORMATTERS = {
   }),
 };
 
+type ProcessKind = "heating" | "cooling" | "humidifying" | "mixing";
+
+type SavedPoint = {
+  id: string;
+  label: string;
+  color: string;
+  dryBulbSI: number;
+  relativeHumidity: number;
+  humidityRatio: number;
+  pressureSI: number;
+};
+
+type ProcessLink = {
+  id: string;
+  fromId: string;
+  toId: string;
+  kind: ProcessKind;
+};
+
+type ChartStatePoint = {
+  id: string;
+  label: string;
+  color: string;
+  dryBulb: number;
+  humidityRatio: number;
+};
+
+type ChartProcess = {
+  id: string;
+  color: string;
+  label: string;
+  points: Array<{ dryBulb: number; humidityRatio: number }>;
+};
+
+const POINT_COLORS = [
+  "#22d3ee",
+  "#38bdf8",
+  "#c084fc",
+  "#f472b6",
+  "#f97316",
+  "#a3e635",
+];
+
+const PROCESS_COLORS: Record<ProcessKind, string> = {
+  heating: "#f97316",
+  cooling: "#0ea5e9",
+  humidifying: "#22c55e",
+  mixing: "#eab308",
+};
+
 const convertInputs = (
   inputs: PsychroInputs,
   from: UnitSystem,
@@ -98,6 +149,23 @@ const convertInputs = (
   }
 
   return { ...inputs };
+};
+
+const toCelsius = (value: number, system: UnitSystem) =>
+  system === "si" ? value : ((value - 32) * 5) / 9;
+
+const fromCelsius = (value: number, system: UnitSystem) =>
+  system === "si" ? value : value * (9 / 5) + 32;
+
+const toPressureSI = (value: number, system: UnitSystem) =>
+  system === "si" ? value : value * PA_PER_PSI;
+
+const createId = () => Math.random().toString(36).slice(2, 9);
+
+const generateLabel = (count: number) => {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  if (count < alphabet.length) return alphabet[count];
+  return `P${count - alphabet.length + 1}`;
 };
 
 type PropertyField = {
@@ -204,6 +272,17 @@ export default function Home() {
   const [showHoverCrosshair, setShowHoverCrosshair] = useState(true);
   const drynessStep = 0.5;
   const humidityStep = 0.5;
+  const [savedPoints, setSavedPoints] = useState<SavedPoint[]>([]);
+  const [processes, setProcesses] = useState<ProcessLink[]>([]);
+  const [processDraft, setProcessDraft] = useState<{
+    fromId: string;
+    toId: string;
+    kind: ProcessKind;
+  }>({
+    fromId: "",
+    toId: "",
+    kind: "heating",
+  });
 
   const chartExtents = useMemo(
     () => getChartExtents(unitSystem),
@@ -294,11 +373,102 @@ export default function Home() {
     [chartExtents]
   );
 
+  const handleCaptureState = () => {
+    if (!psychroState) return;
+    const newPoint: SavedPoint = {
+      id: createId(),
+      label: generateLabel(savedPoints.length),
+      color: POINT_COLORS[savedPoints.length % POINT_COLORS.length],
+      dryBulbSI: toCelsius(psychroState.dryBulb, unitSystem),
+      relativeHumidity: clamp(psychroState.relativeHumidity, 0, 100),
+      humidityRatio: psychroState.humidityRatio,
+      pressureSI: toPressureSI(inputs.pressure, unitSystem),
+    };
+    setSavedPoints((prev) => [...prev, newPoint]);
+  };
+
+  const handlePointLabelChange = (id: string, label: string) => {
+    setSavedPoints((prev) =>
+      prev.map((point) => (point.id === id ? { ...point, label } : point))
+    );
+  };
+
+  const handleRemovePoint = (id: string) => {
+    setSavedPoints((prev) => prev.filter((point) => point.id !== id));
+    setProcesses((prev) =>
+      prev.filter((process) => process.fromId !== id && process.toId !== id)
+    );
+    setProcessDraft((prev) => ({
+      ...prev,
+      fromId: prev.fromId === id ? "" : prev.fromId,
+      toId: prev.toId === id ? "" : prev.toId,
+    }));
+  };
+
+  const handleProcessDraftChange = (
+    field: keyof typeof processDraft,
+    value: string
+  ) => {
+    setProcessDraft((prev) => ({
+      ...prev,
+      [field]: field === "kind" ? (value as ProcessKind) : value,
+    }));
+  };
+
+  const handleAddProcess = () => {
+    const { fromId, toId, kind } = processDraft;
+    if (!fromId || !toId || fromId === toId) return;
+    setProcesses((prev) => [
+      ...prev,
+      {
+        id: createId(),
+        fromId,
+        toId,
+        kind,
+      },
+    ]);
+    setProcessDraft((prev) => ({ ...prev, toId: "" }));
+  };
+
+  const handleRemoveProcess = (id: string) => {
+    setProcesses((prev) => prev.filter((process) => process.id !== id));
+  };
+
+  const chartStatePoints = useMemo<ChartStatePoint[]>(() => {
+    return savedPoints.map((point) => ({
+      id: point.id,
+      label: point.label,
+      color: point.color,
+      dryBulb: fromCelsius(point.dryBulbSI, unitSystem),
+      humidityRatio: point.humidityRatio,
+    }));
+  }, [savedPoints, unitSystem]);
+
+  const chartProcesses = useMemo<ChartProcess[]>(() => {
+    const map = new Map(chartStatePoints.map((point) => [point.id, point]));
+    return processes
+      .map((process) => {
+        const from = map.get(process.fromId);
+        const to = map.get(process.toId);
+        if (!from || !to) return null;
+        return {
+          id: process.id,
+          color: PROCESS_COLORS[process.kind],
+          label: `${from.label} → ${to.label}`,
+          points: [
+            { dryBulb: from.dryBulb, humidityRatio: from.humidityRatio },
+            { dryBulb: to.dryBulb, humidityRatio: to.humidityRatio },
+          ],
+        };
+      })
+      .filter((value): value is ChartProcess => Boolean(value));
+  }, [chartStatePoints, processes]);
+
   return (
     <div className="flex h-screen w-full flex-col bg-background text-foreground">
-      <div className="flex flex-1 overflow-hidden">
-        <aside className="flex h-full w-full max-w-[340px] flex-col border-r border-border/60 bg-card/20 backdrop-blur-xl">
-        <div className="flex h-full flex-col gap-4 overflow-y-auto p-5">
+      <div className="flex flex-1 flex-col overflow-hidden lg:flex-row">
+        <aside className="flex h-full w-full shrink-0 flex-col border-r border-border/60 bg-card/20 backdrop-blur-xl lg:w-auto lg:basis-[320px] xl:basis-[360px]">
+        <div className="flex h-full flex-col gap-3 overflow-y-auto p-4 md:p-5">
           <motion.div
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
@@ -417,48 +587,224 @@ export default function Home() {
           </motion.div>
 
           <motion.div
-            initial={{ opacity: 0, y: 16 }}
+            initial={{ opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.45, delay: 0.12 }}
+            transition={{ duration: 0.5, delay: 0.18 }}
             className="rounded-xl border border-border/60 bg-background/60 p-4"
           >
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                Psychrometric properties
-              </h2>
-              <span className="text-[10px] uppercase text-muted-foreground">
-                Live results
-              </span>
-            </div>
-            {invalidState && (
-              <div className="mt-3 rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                Current inputs do not map to a physical air state. Adjust your
-                dry bulb, humidity, or pressure.
-              </div>
-            )}
-            <div className="mt-3 grid grid-cols-2 gap-1.5 text-xs md:text-sm">
-              {properties.map((property) => (
-                <div
-                  key={property.id}
-                  className="rounded-lg border border-border/40 bg-background/50 px-3 py-2"
+            <Tabs defaultValue="properties" className="w-full">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <TabsList className="flex w-full gap-1 rounded-lg border border-border/50 bg-background/40 p-1 text-xs md:w-auto">
+                  <TabsTrigger
+                    value="properties"
+                    className="h-auto rounded-md px-3 py-1 text-[11px] font-semibold data-[state=active]:bg-foreground/10 data-[state=active]:text-foreground"
+                  >
+                    Properties
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="processes"
+                    className="h-auto rounded-md px-3 py-1 text-[11px] font-semibold data-[state=active]:bg-foreground/10 data-[state=active]:text-foreground"
+                  >
+                    Processes
+                  </TabsTrigger>
+                </TabsList>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleCaptureState}
+                  disabled={!psychroState}
+                  className="h-9 w-full text-xs md:w-auto"
                 >
-                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                    {property.label}
-                  </p>
-                  <p className="text-sm font-semibold text-foreground">
-                    {property.value}{" "}
-                    <span className="text-xs font-normal text-muted-foreground">
-                      {property.unit}
-                    </span>
-                  </p>
-                </div>
-              ))}
-            </div>
-          </motion.div>
-        </div>
-      </aside>
+                  Capture current state
+                </Button>
+              </div>
 
-        <main className="flex flex-1 flex-col bg-[#020202]">
+              <TabsContent value="properties" className="mt-4">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                    Psychrometric properties
+                  </h2>
+                  <span className="text-[10px] uppercase text-muted-foreground">
+                    Live results
+                  </span>
+                </div>
+                {invalidState && (
+                  <div className="mt-3 rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                    Current inputs do not map to a physical air state. Adjust your
+                    dry bulb, humidity, or pressure.
+                  </div>
+                )}
+                <div className="mt-3 grid grid-cols-2 gap-1.5 text-xs md:text-sm">
+                  {properties.map((property) => (
+                    <div
+                      key={property.id}
+                      className="rounded-lg border border-border/40 bg-background/50 px-3 py-2"
+                    >
+                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                        {property.label}
+                      </p>
+                      <p className="text-sm font-semibold text-foreground">
+                        {property.value}{" "}
+                        <span className="text-xs font-normal text-muted-foreground">
+                          {property.unit}
+                        </span>
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </TabsContent>
+
+              <TabsContent value="processes" className="mt-4 space-y-4">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Saved states
+                    </p>
+                    {savedPoints.length > 0 && (
+                      <span className="text-[11px] text-muted-foreground">
+                        {savedPoints.length} point{savedPoints.length > 1 ? "s" : ""}
+                      </span>
+                    )}
+                  </div>
+                  {savedPoints.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">
+                      No saved states yet. Capture a point to begin.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {savedPoints.map((point) => {
+                        const displayDryBulb = FORMATTERS.temperature.format(
+                          fromCelsius(point.dryBulbSI, unitSystem)
+                        );
+                        return (
+                          <div
+                            key={point.id}
+                            className="flex flex-col gap-2 rounded-lg border border-border/40 bg-background/50 px-3 py-2"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span
+                                className="inline-flex h-2.5 w-2.5 rounded-full"
+                                style={{ backgroundColor: point.color }}
+                              />
+                              <Input
+                                value={point.label}
+                                onChange={(event) =>
+                                  handlePointLabelChange(point.id, event.target.value)
+                                }
+                                className="h-8 flex-1 border-border/40 bg-background/70 text-xs"
+                                aria-label={`Label for ${point.label}`}
+                              />
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-muted-foreground"
+                                onClick={() => handleRemovePoint(point.id)}
+                              >
+                                ×
+                              </Button>
+                            </div>
+                            <div className="grid grid-cols-3 gap-2 text-[11px] text-muted-foreground">
+                              <div>
+                                <p className="uppercase tracking-wide">Dry Bulb</p>
+                                <p className="font-semibold text-foreground">
+                                  {displayDryBulb} {unitSystem === "si" ? "°C" : "°F"}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="uppercase tracking-wide">Rel Hum</p>
+                                <p className="font-semibold text-foreground">
+                                  {FORMATTERS.humidityPercent.format(point.relativeHumidity)}%
+                                </p>
+                              </div>
+                              <div>
+                                <p className="uppercase tracking-wide">Hum Ratio</p>
+                                <p className="font-semibold text-foreground">
+                                  {unitSystem === "si"
+                                    ? FORMATTERS.humidityRatioSI.format(
+                                        humidityRatioToDisplay(unitSystem, point.humidityRatio)
+                                      )
+                                    : FORMATTERS.humidityRatioIP.format(
+                                        humidityRatioToDisplay(unitSystem, point.humidityRatio)
+                                      )}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Processes
+                    </p>
+                    {processes.length > 0 && (
+                      <span className="text-[11px] text-muted-foreground">
+                        {processes.length} link{processes.length > 1 ? "s" : ""}
+                      </span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <select
+                      value={processDraft.fromId}
+                      onChange={(event) =>
+                        handleProcessDraftChange("fromId", event.target.value)
+                      }
+                      className="h-8 rounded-md border border-border/40 bg-background/70 px-2 text-[11px]"
+                    >
+                      <option value="">From</option>
+                      {savedPoints.map((point) => (
+                        <option key={point.id} value={point.id}>
+                          {point.label}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      value={processDraft.toId}
+                      onChange={(event) =>
+                        handleProcessDraftChange("toId", event.target.value)
+                      }
+                      className="h-8 rounded-md border border-border/40 bg-background/70 px-2 text-[11px]"
+                    >
+                      <option value="">To</option>
+                      {savedPoints.map((point) => (
+                        <option key={point.id} value={point.id}>
+                          {point.label}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      value={processDraft.kind}
+                      onChange={(event) =>
+                        handleProcessDraftChange("kind", event.target.value)
+                      }
+                      className="col-span-2 h-8 rounded-md border border-border/40 bg-background/70 px-2 text-[11px] sm:col-span-1"
+                    >
+                      <option value="heating">Heating</option>
+                      <option value="cooling">Cooling</option>
+                      <option value="humidifying">Humidifying</option>
+                      <option value="mixing">Mixing</option>
+                    </select>
+                    <Button
+                      size="sm"
+                      onClick={handleAddProcess}
+                      disabled={savedPoints.length < 2}
+                      className="col-span-2 h-8 text-xs"
+                    >
+                      Add process
+                    </Button>
+                  </div>
+              </div>
+            </TabsContent>
+          </Tabs>
+        </motion.div>
+      </div>
+    </aside>
+
+        <main className="flex flex-1 min-w-0 flex-col bg-[#020202]">
           <motion.div
             initial={{ opacity: 0, y: -12 }}
             animate={{ opacity: 1, y: 0 }}
@@ -544,6 +890,8 @@ export default function Home() {
                 onSelectState={handleChartState}
                 zoomLocked={zoomLocked}
                 showHoverCrosshair={showHoverCrosshair}
+                statePoints={chartStatePoints}
+                processes={chartProcesses}
               />
             </div>
           </div>
