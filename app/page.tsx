@@ -119,6 +119,62 @@ const PROCESS_COLORS: Record<ProcessKind, string> = {
   mixing: "#eab308",
 };
 
+const FEATURE_SECTIONS = [
+  {
+    title: "HVAC-ready presets",
+    description:
+      "Start from altitude-adjusted defaults for typical project kickoff meetings or import states from your last run.",
+    bullets: [
+      "Metric + Imperial parity",
+      "Per-point labels and annotations",
+      "Instant validation messaging",
+    ],
+  },
+  {
+    title: "Process storytelling",
+    description:
+      "Link saved states into heating, cooling, humidifying, or mixing processes and narrate the path directly on the chart.",
+    bullets: [
+      "Color-coded process families",
+      "Automatic label building",
+      "Interactive hover readouts",
+    ],
+  },
+  {
+    title: "Export-ready insights",
+    description:
+      "Capture every property, from enthalpy to vapor pressure, with formatting tuned for reports and client decks.",
+    bullets: [
+      "High-contrast dark UI",
+      "Clipboard-friendly values",
+      "Viewport-aware chart controls",
+    ],
+  },
+];
+
+const FAQ_ITEMS = [
+  {
+    question: "What makes this psychrometric chart different?",
+    answer:
+      "Psychro Chart Studio focuses on real-time calculations, dual-unit parity, and interactive storytelling so HVAC designers can explain decisions to clients without leaving the browser.",
+  },
+  {
+    question: "Can I use it for both SI and IP projects?",
+    answer:
+      "Yes. You can toggle between SI and Imperial units at any time, and saved points retain the precision needed for either specification.",
+  },
+  {
+    question: "Does it support atypical altitudes or pressures?",
+    answer:
+      "Atmospheric pressure is fully editable, so you can model mountain campuses, underground facilities, or any pressurized environment.",
+  },
+  {
+    question: "Do I need to install anything?",
+    answer:
+      "No installation required—the tool runs entirely in the browser and uses lightweight animations to stay responsive on low-powered laptops.",
+  },
+];
+
 const convertInputs = (
   inputs: PsychroInputs,
   from: UnitSystem,
@@ -465,7 +521,7 @@ export default function Home() {
   }, [chartStatePoints, processes]);
 
   return (
-    <div className="flex h-screen w-full flex-col bg-background text-foreground">
+    <div className="flex min-h-screen w-full flex-col bg-background text-foreground">
       <div className="flex flex-1 flex-col overflow-hidden lg:flex-row">
         <aside className="flex h-full w-full shrink-0 flex-col border-r border-border/60 bg-card/20 backdrop-blur-xl lg:w-auto lg:basis-[320px] xl:basis-[360px]">
         <div className="flex h-full flex-col gap-3 overflow-y-auto p-4 md:p-5">
@@ -897,6 +953,101 @@ export default function Home() {
           </div>
         </main>
       </div>
+
+      <section
+        id="features"
+        className="border-t border-border/60 bg-background px-6 py-12 text-foreground"
+        aria-labelledby="features-heading"
+      >
+        <div className="mx-auto flex max-w-6xl flex-col gap-8">
+          <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Engineering context
+              </p>
+              <h2 id="features-heading" className="text-2xl font-semibold tracking-tight">
+                Tell clearer HVAC stories with defensible data
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                Blend chart interactions with narrative-ready highlights for workshops, submittals,
+                and design reviews.
+              </p>
+            </div>
+            <a
+              href="#faq"
+              className="text-sm font-semibold text-primary hover:underline"
+              aria-label="Jump to frequently asked questions"
+            >
+              Jump to FAQ →
+            </a>
+          </div>
+          <div className="grid gap-6 md:grid-cols-3">
+            {FEATURE_SECTIONS.map((feature) => (
+              <article
+                key={feature.title}
+                className="rounded-2xl border border-border/60 bg-card/30 p-6 shadow-sm backdrop-blur"
+              >
+                <h3 className="text-lg font-semibold">{feature.title}</h3>
+                <p className="mt-2 text-sm text-muted-foreground">{feature.description}</p>
+                <ul className="mt-4 space-y-2 text-sm text-foreground/80">
+                  {feature.bullets.map((bullet) => (
+                    <li key={bullet} className="flex items-start gap-2">
+                      <span className="mt-1 inline-block h-2 w-2 rounded-full bg-emerald-400" />
+                      <span>{bullet}</span>
+                    </li>
+                  ))}
+                </ul>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section
+        id="faq"
+        className="border-t border-border/60 bg-background px-6 py-12 text-foreground"
+        aria-labelledby="faq-heading"
+        itemScope
+        itemType="https://schema.org/FAQPage"
+      >
+        <div className="mx-auto max-w-4xl space-y-6">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Frequently asked questions
+            </p>
+            <h2 id="faq-heading" className="text-2xl font-semibold tracking-tight">
+              Everything you need to ship better HVAC documentation
+            </h2>
+          </div>
+          <div className="space-y-4">
+            {FAQ_ITEMS.map((item) => (
+              <details
+                key={item.question}
+                className="group rounded-2xl border border-border/60 bg-card/30 p-4"
+                itemProp="mainEntity"
+                itemScope
+                itemType="https://schema.org/Question"
+              >
+                <summary className="flex cursor-pointer list-none items-center justify-between text-base font-medium">
+                  <span itemProp="name">{item.question}</span>
+                  <span className="text-xl text-muted-foreground transition group-open:rotate-45">
+                    +
+                  </span>
+                </summary>
+                <div
+                  className="mt-3 text-sm text-muted-foreground"
+                  itemProp="acceptedAnswer"
+                  itemScope
+                  itemType="https://schema.org/Answer"
+                >
+                  <p itemProp="text">{item.answer}</p>
+                </div>
+              </details>
+            ))}
+          </div>
+        </div>
+      </section>
+
       <footer className="border-t border-border/60 bg-background/80 px-6 py-4 text-xs text-muted-foreground">
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <span>&copy; {new Date().getFullYear()} Katakuri</span>
