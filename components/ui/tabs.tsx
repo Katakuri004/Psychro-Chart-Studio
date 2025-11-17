@@ -44,7 +44,7 @@ const TabsContent = React.forwardRef<
   <TabsPrimitive.Content
     ref={ref}
     className={cn(
-      "mt-4 rounded-xl border border-border/60 bg-card/80 p-6 text-sm text-muted-foreground shadow-ambient focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+      "mt-4 rounded-xl border border-[hsla(var(--border),0.6)] bg-[hsla(var(--card),0.8)] p-6 text-sm text-muted-foreground shadow-ambient focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
       className
     )}
     {...props}

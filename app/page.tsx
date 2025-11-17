@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
@@ -103,6 +103,48 @@ type ChartProcess = {
   points: Array<{ dryBulb: number; humidityRatio: number }>;
 };
 
+type ComparisonRun = {
+  id: string;
+  label: string;
+  color: string;
+  active: boolean;
+  points: SavedPoint[];
+  processes: ProcessLink[];
+};
+
+type ScenarioTemplatePoint = {
+  label: string;
+  dryBulb: number;
+  relativeHumidity: number;
+  color?: string;
+  note?: string;
+};
+
+type ScenarioTemplateProcess = {
+  fromLabel: string;
+  toLabel: string;
+  kind: ProcessKind;
+};
+
+type ScenarioTemplate = {
+  id: string;
+  name: string;
+  summary: string;
+  inputs: Record<UnitSystem, PsychroInputs>;
+  points: ScenarioTemplatePoint[];
+  processes: ScenarioTemplateProcess[];
+  insights: string[];
+};
+
+type SnapshotPayload = {
+  unitSystem: UnitSystem;
+  inputs: PsychroInputs;
+  savedPoints: SavedPoint[];
+  processes: ProcessLink[];
+  comparisonRuns: Array<Omit<ComparisonRun, "active">>;
+  activeTemplateId: string | null;
+};
+
 const POINT_COLORS = [
   "#22d3ee",
   "#38bdf8",
@@ -119,67 +161,228 @@ const PROCESS_COLORS: Record<ProcessKind, string> = {
   mixing: "#eab308",
 };
 
-const FEATURE_SECTIONS = [
+const RUN_COLORS = ["#ec4899", "#c084fc", "#10b981", "#facc15", "#38bdf8"];
+const SHARE_PARAM_KEY = "snapshot";
+
+const createTemplateInputs = (
+  inputs: PsychroInputs
+): Record<UnitSystem, PsychroInputs> => ({
+  si: inputs,
+  ip: convertInputs(inputs, "si", "ip"),
+});
+
+const SCENARIO_TEMPLATES: ScenarioTemplate[] = [
   {
-    title: "HVAC-ready presets",
-    description:
-      "Start from altitude-adjusted defaults for typical project kickoff meetings or import states from your last run.",
-    bullets: [
-      "Metric + Imperial parity",
-      "Per-point labels and annotations",
-      "Instant validation messaging",
+    id: "doas",
+    name: "DOAS Commissioning",
+    summary: "Dedicated outdoor air stream staged through energy recovery and cooling coils.",
+    insights: [
+      "Target coil leaving dew point < 12°C (54°F) for latent control.",
+      "Parallel terminals reheat to room-neutral supply.",
+    ],
+    inputs: createTemplateInputs({
+      pressure: 101_325,
+      dryBulb: 30,
+      relativeHumidity: 60,
+    }),
+    points: [
+      {
+        label: "OA",
+        dryBulb: 30,
+        relativeHumidity: 60,
+        color: "#38bdf8",
+        note: "Outdoor design air",
+      },
+      {
+        label: "HX",
+        dryBulb: 21,
+        relativeHumidity: 95,
+        color: "#f472b6",
+        note: "After enthalpy wheel",
+      },
+      {
+        label: "SA",
+        dryBulb: 13,
+        relativeHumidity: 90,
+        color: "#22c55e",
+        note: "Coil leaving condition",
+      },
+    ],
+    processes: [
+      { fromLabel: "OA", toLabel: "HX", kind: "cooling" },
+      { fromLabel: "HX", toLabel: "SA", kind: "cooling" },
     ],
   },
   {
-    title: "Process storytelling",
-    description:
-      "Link saved states into heating, cooling, humidifying, or mixing processes and narrate the path directly on the chart.",
-    bullets: [
-      "Color-coded process families",
-      "Automatic label building",
-      "Interactive hover readouts",
+    id: "data-center",
+    name: "Data Hall Loop",
+    summary: "CRAH coil loop between cold aisle supply and hot aisle return.",
+    insights: [
+      "Maintain dew point margin > 6°C (10°F).",
+      "Overlay with sensor data to validate ΔT.",
+    ],
+    inputs: createTemplateInputs({
+      pressure: 101_325,
+      dryBulb: 24,
+      relativeHumidity: 45,
+    }),
+    points: [
+      {
+        label: "CR",
+        dryBulb: 18,
+        relativeHumidity: 50,
+        color: "#0ea5e9",
+        note: "Cold aisle supply",
+      },
+      {
+        label: "SR",
+        dryBulb: 32,
+        relativeHumidity: 20,
+        color: "#f97316",
+        note: "Server return",
+      },
+      {
+        label: "MX",
+        dryBulb: 22,
+        relativeHumidity: 30,
+        color: "#a3e635",
+        note: "Mixed air",
+      },
+    ],
+    processes: [
+      { fromLabel: "CR", toLabel: "SR", kind: "heating" },
+      { fromLabel: "SR", toLabel: "MX", kind: "cooling" },
     ],
   },
   {
-    title: "Export-ready insights",
-    description:
-      "Capture every property, from enthalpy to vapor pressure, with formatting tuned for reports and client decks.",
-    bullets: [
-      "High-contrast dark UI",
-      "Clipboard-friendly values",
-      "Viewport-aware chart controls",
+    id: "greenhouse",
+    name: "Greenhouse Daycycle",
+    summary: "Track evapotranspiration from dawn to purge.",
+    insights: [
+      "Plan vents before humidity ratio crosses 0.014 kg/kg.",
+      "Evening purge protects structures overnight.",
+    ],
+    inputs: createTemplateInputs({
+      pressure: 98_000,
+      dryBulb: 26,
+      relativeHumidity: 70,
+    }),
+    points: [
+      {
+        label: "AM",
+        dryBulb: 18,
+        relativeHumidity: 85,
+        color: "#22d3ee",
+        note: "Morning baseline",
+      },
+      {
+        label: "PD",
+        dryBulb: 26,
+        relativeHumidity: 60,
+        color: "#facc15",
+        note: "Peak daylight",
+      },
+      {
+        label: "EV",
+        dryBulb: 30,
+        relativeHumidity: 55,
+        color: "#fb7185",
+        note: "Evening purge",
+      },
+    ],
+    processes: [
+      { fromLabel: "AM", toLabel: "PD", kind: "heating" },
+      { fromLabel: "PD", toLabel: "EV", kind: "mixing" },
     ],
   },
 ];
 
-const FAQ_ITEMS = [
-  {
-    question: "What makes this psychrometric chart different?",
-    answer:
-      "Psychro Chart Studio focuses on real-time calculations, dual-unit parity, and interactive storytelling so HVAC designers can explain decisions to clients without leaving the browser.",
-  },
-  {
-    question: "Can I use it for both SI and IP projects?",
-    answer:
-      "Yes. You can toggle between SI and Imperial units at any time, and saved points retain the precision needed for either specification.",
-  },
-  {
-    question: "Does it support atypical altitudes or pressures?",
-    answer:
-      "Atmospheric pressure is fully editable, so you can model mountain campuses, underground facilities, or any pressurized environment.",
-  },
-  {
-    question: "Do I need to install anything?",
-    answer:
-      "No installation required—the tool runs entirely in the browser and uses lightweight animations to stay responsive on low-powered laptops.",
-  },
-];
+const toBase64Url = (value: string) => {
+  if (typeof window === "undefined") {
+    return Buffer.from(value, "utf-8")
+      .toString("base64")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+  }
+  const base64 = window.btoa(unescape(encodeURIComponent(value)));
+  return base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+};
 
-const convertInputs = (
+const fromBase64Url = (value: string) => {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized + "===".slice((normalized.length + 3) % 4);
+  if (typeof window === "undefined") {
+    return Buffer.from(padded, "base64").toString("utf-8");
+  }
+  const decoded = window.atob(padded);
+  return decodeURIComponent(
+    decoded
+      .split("")
+      .map((char) => "%" + ("00" + char.charCodeAt(0).toString(16)).slice(-2))
+      .join("")
+  );
+};
+
+const encodeSnapshotPayload = (payload: unknown) =>
+  toBase64Url(JSON.stringify(payload));
+
+const decodeSnapshotPayload = <T,>(value: string): T =>
+  JSON.parse(fromBase64Url(value));
+
+const buildTemplateSavedPoints = (
+  template: ScenarioTemplate
+): SavedPoint[] => {
+  const pressureSI = template.inputs.si.pressure;
+  return template.points
+    .map((point, index) => {
+      const result = computePsychrometrics(
+        {
+          pressure: pressureSI,
+          dryBulb: point.dryBulb,
+          relativeHumidity: point.relativeHumidity,
+        },
+        "si"
+      );
+      if (!result) return null;
+      return {
+        id: `${template.id}-${point.label}-${index}`,
+        label: point.label,
+        color: point.color ?? POINT_COLORS[index % POINT_COLORS.length],
+        dryBulbSI: result.dryBulb,
+        relativeHumidity: result.relativeHumidity,
+        humidityRatio: result.humidityRatio,
+        pressureSI,
+      };
+    })
+    .filter((value): value is SavedPoint => Boolean(value));
+};
+
+const buildTemplateProcesses = (
+  template: ScenarioTemplate,
+  points: SavedPoint[]
+): ProcessLink[] => {
+  const map = new Map(points.map((point) => [point.label, point.id]));
+  return template.processes
+    .map((process, index) => {
+      const fromId = map.get(process.fromLabel);
+      const toId = map.get(process.toLabel);
+      if (!fromId || !toId) return null;
+      return {
+        id: `${template.id}-${index}`,
+        fromId,
+        toId,
+        kind: process.kind,
+      };
+    })
+    .filter((value): value is ProcessLink => Boolean(value));
+};
+
+function convertInputs(
   inputs: PsychroInputs,
   from: UnitSystem,
   to: UnitSystem
-): PsychroInputs => {
+): PsychroInputs {
   if (from === to) {
     return { ...inputs };
   }
@@ -187,25 +390,21 @@ const convertInputs = (
   if (from === "ip" && to === "si") {
     return {
       pressure: Math.round(inputs.pressure * PA_PER_PSI),
-      dryBulb: Number.parseFloat(
-        (((inputs.dryBulb - 32) * 5) / 9).toFixed(1)
-      ),
+      dryBulb: Number.parseFloat((((inputs.dryBulb - 32) * 5) / 9).toFixed(1)),
       relativeHumidity: inputs.relativeHumidity,
     };
   }
 
   if (from === "si" && to === "ip") {
     return {
-      pressure: Number.parseFloat(
-        (inputs.pressure / PA_PER_PSI).toFixed(3)
-      ),
+      pressure: Number.parseFloat((inputs.pressure / PA_PER_PSI).toFixed(3)),
       dryBulb: Number.parseFloat(((inputs.dryBulb * 9) / 5 + 32).toFixed(1)),
       relativeHumidity: inputs.relativeHumidity,
     };
   }
 
   return { ...inputs };
-};
+}
 
 const toCelsius = (value: number, system: UnitSystem) =>
   system === "si" ? value : ((value - 32) * 5) / 9;
@@ -326,6 +525,13 @@ export default function Home() {
   const [inputs, setInputs] = useState<PsychroInputs>({ ...DEFAULT_INPUTS.si });
   const [zoomLocked, setZoomLocked] = useState(false);
   const [showHoverCrosshair, setShowHoverCrosshair] = useState(true);
+  const [comparisonRuns, setComparisonRuns] = useState<ComparisonRun[]>([]);
+  const [comparisonLabel, setComparisonLabel] = useState("Run 1");
+  const [activeTemplateId, setActiveTemplateId] = useState<string | null>(null);
+  const [shareStatus, setShareStatus] = useState<"idle" | "copied" | "error">(
+    "idle"
+  );
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
   const drynessStep = 0.5;
   const humidityStep = 0.5;
   const [savedPoints, setSavedPoints] = useState<SavedPoint[]>([]);
@@ -339,6 +545,47 @@ export default function Home() {
     toId: "",
     kind: "heating",
   });
+  const snapshotHydratedRef = useRef(false);
+  const exportRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (snapshotHydratedRef.current) return;
+    if (typeof window === "undefined") return;
+    const encoded = new URLSearchParams(window.location.search).get(
+      SHARE_PARAM_KEY
+    );
+    if (!encoded) {
+      snapshotHydratedRef.current = true;
+      return;
+    }
+    try {
+      const payload = decodeSnapshotPayload<SnapshotPayload>(encoded);
+      if (payload.unitSystem) setUnitSystem(payload.unitSystem);
+      if (payload.inputs) setInputs(payload.inputs);
+      if (payload.savedPoints) setSavedPoints(payload.savedPoints);
+      if (payload.processes) setProcesses(payload.processes);
+      if (payload.comparisonRuns) {
+        setComparisonRuns(
+          payload.comparisonRuns.map((run) => ({
+            ...run,
+            active: true,
+          }))
+        );
+      }
+      setActiveTemplateId(payload.activeTemplateId ?? null);
+    } catch (error) {
+      console.error("Failed to decode snapshot", error);
+      setShareStatus("error");
+    } finally {
+      snapshotHydratedRef.current = true;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (shareStatus === "idle") return;
+    const timer = window.setTimeout(() => setShareStatus("idle"), 2400);
+    return () => window.clearTimeout(timer);
+  }, [shareStatus]);
 
   const chartExtents = useMemo(
     () => getChartExtents(unitSystem),
@@ -471,6 +718,50 @@ export default function Home() {
     }));
   };
 
+  const handleApplyTemplate = (templateId: string) => {
+    const template = SCENARIO_TEMPLATES.find((item) => item.id === templateId);
+    if (!template) return;
+    const templatePoints = buildTemplateSavedPoints(template);
+    const templateProcesses = buildTemplateProcesses(template, templatePoints);
+    setInputs({ ...template.inputs[unitSystem] });
+    setSavedPoints(templatePoints);
+    setProcesses(templateProcesses);
+    setActiveTemplateId(template.id);
+  };
+
+  const handleOverlayTemplate = (templateId: string) => {
+    const template = SCENARIO_TEMPLATES.find((item) => item.id === templateId);
+    if (!template) return;
+    const templatePoints = buildTemplateSavedPoints(template);
+    const templateProcesses = buildTemplateProcesses(template, templatePoints);
+    const runId = createId();
+    const color = RUN_COLORS[comparisonRuns.length % RUN_COLORS.length];
+    const clonedPoints = templatePoints.map((point, index) => ({
+      ...point,
+      id: `${runId}-${index}-${point.id}`,
+    }));
+    const idMap = new Map(
+      templatePoints.map((point, index) => [point.id, clonedPoints[index].id])
+    );
+    const clonedProcesses = templateProcesses.map((process, index) => ({
+      ...process,
+      id: `${runId}-${index}-${process.id}`,
+      fromId: idMap.get(process.fromId) ?? process.fromId,
+      toId: idMap.get(process.toId) ?? process.toId,
+    }));
+    setComparisonRuns((prev) => [
+      ...prev,
+      {
+        id: runId,
+        label: `${template.name} overlay`,
+        color,
+        active: true,
+        points: clonedPoints,
+        processes: clonedProcesses,
+      },
+    ]);
+  };
+
   const handleAddProcess = () => {
     const { fromId, toId, kind } = processDraft;
     if (!fromId || !toId || fromId === toId) return;
@@ -486,11 +777,113 @@ export default function Home() {
     setProcessDraft((prev) => ({ ...prev, toId: "" }));
   };
 
-  const handleRemoveProcess = (id: string) => {
-    setProcesses((prev) => prev.filter((process) => process.id !== id));
+  const handleSaveComparisonRun = () => {
+    if (savedPoints.length === 0) return;
+    const label =
+      comparisonLabel.trim() || `Run ${comparisonRuns.length + 1}`;
+    const runId = createId();
+    const color = RUN_COLORS[comparisonRuns.length % RUN_COLORS.length];
+    const clonedPoints = savedPoints.map((point, index) => ({
+      ...point,
+      id: `${runId}-${index}-${point.id}`,
+    }));
+    const idMap = new Map(
+      savedPoints.map((point, index) => [point.id, clonedPoints[index].id])
+    );
+    const clonedProcesses = processes.map((process, index) => ({
+      ...process,
+      id: `${runId}-${index}-${process.id}`,
+      fromId: idMap.get(process.fromId) ?? process.fromId,
+      toId: idMap.get(process.toId) ?? process.toId,
+    }));
+    setComparisonRuns((prev) => [
+      ...prev,
+      {
+        id: runId,
+        label,
+        color,
+        active: true,
+        points: clonedPoints,
+        processes: clonedProcesses,
+      },
+    ]);
+    setComparisonLabel(`Run ${comparisonRuns.length + 2}`);
   };
 
-  const chartStatePoints = useMemo<ChartStatePoint[]>(() => {
+  const handleToggleRun = (id: string) => {
+    setComparisonRuns((prev) =>
+      prev.map((run) =>
+        run.id === id ? { ...run, active: !run.active } : run
+      )
+    );
+  };
+
+  const handleRemoveRun = (id: string) => {
+    setComparisonRuns((prev) => prev.filter((run) => run.id !== id));
+  };
+
+  const handleCopySnapshotLink = async () => {
+    if (typeof window === "undefined") return;
+    try {
+      const payload: SnapshotPayload = {
+        unitSystem,
+        inputs,
+        savedPoints,
+        processes,
+        activeTemplateId,
+        comparisonRuns: comparisonRuns
+          .filter((run) => run.active)
+          .map((run) => {
+            const { active, ...rest } = run;
+            void active;
+            return rest;
+          }),
+      };
+      const encoded = encodeSnapshotPayload(payload);
+      const url = new URL(window.location.href);
+      url.searchParams.set(SHARE_PARAM_KEY, encoded);
+      if (!navigator.clipboard) {
+        throw new Error("Clipboard API unavailable");
+      }
+      await navigator.clipboard.writeText(url.toString());
+      setShareStatus("copied");
+    } catch (error) {
+      console.error("Failed to copy snapshot link", error);
+      setShareStatus("error");
+    }
+  };
+
+  const handleExportPdf = async () => {
+    if (!exportRef.current) return;
+    setIsExportingPdf(true);
+    try {
+      const [html2canvas, jsPDFModule] = await Promise.all([
+        import("html2canvas").then((mod) => mod.default),
+        import("jspdf").then((mod) => mod.jsPDF),
+      ]);
+      const canvas = await html2canvas(exportRef.current, {
+        backgroundColor: "#020617",
+        scale: 2,
+      });
+      const imageData = canvas.toDataURL("image/png", 1);
+      const pdf = new jsPDFModule("landscape", "pt", "a4");
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const ratio = Math.min(pageWidth / canvas.width, pageHeight / canvas.height);
+      const renderWidth = canvas.width * ratio;
+      const renderHeight = canvas.height * ratio;
+      const offsetX = (pageWidth - renderWidth) / 2;
+      const offsetY = (pageHeight - renderHeight) / 2;
+      pdf.addImage(imageData, "PNG", offsetX, offsetY, renderWidth, renderHeight);
+      pdf.save(`psychro-chart-${Date.now()}.pdf`);
+    } catch (error) {
+      console.error("Failed to export PDF", error);
+    } finally {
+      setIsExportingPdf(false);
+    }
+  };
+
+  const baseChartPoints = useMemo<ChartStatePoint[]>(() => {
     return savedPoints.map((point) => ({
       id: point.id,
       label: point.label,
@@ -500,8 +893,27 @@ export default function Home() {
     }));
   }, [savedPoints, unitSystem]);
 
-  const chartProcesses = useMemo<ChartProcess[]>(() => {
-    const map = new Map(chartStatePoints.map((point) => [point.id, point]));
+  const overlayChartPoints = useMemo<ChartStatePoint[]>(() => {
+    return comparisonRuns
+      .filter((run) => run.active)
+      .flatMap((run) =>
+        run.points.map((point) => ({
+          id: `${run.id}-${point.id}`,
+          label: `${run.label} · ${point.label}`,
+          color: run.color,
+          dryBulb: fromCelsius(point.dryBulbSI, unitSystem),
+          humidityRatio: point.humidityRatio,
+        }))
+      );
+  }, [comparisonRuns, unitSystem]);
+
+  const chartStatePoints = useMemo(
+    () => [...baseChartPoints, ...overlayChartPoints],
+    [baseChartPoints, overlayChartPoints]
+  );
+
+  const baseChartProcesses = useMemo<ChartProcess[]>(() => {
+    const map = new Map(baseChartPoints.map((point) => [point.id, point]));
     return processes
       .map((process) => {
         const from = map.get(process.fromId);
@@ -518,13 +930,50 @@ export default function Home() {
         };
       })
       .filter((value): value is ChartProcess => Boolean(value));
-  }, [chartStatePoints, processes]);
+  }, [baseChartPoints, processes]);
+
+  const overlayChartProcesses = useMemo<ChartProcess[]>(() => {
+    return comparisonRuns
+      .filter((run) => run.active)
+      .flatMap((run) => {
+        const map = new Map(
+          run.points.map((point) => [point.id, point])
+        );
+        return run.processes
+          .map((process) => {
+            const from = map.get(process.fromId);
+            const to = map.get(process.toId);
+            if (!from || !to) return null;
+            return {
+              id: `${run.id}-${process.id}`,
+              color: run.color,
+              label: `${run.label}: ${from.label} → ${to.label}`,
+              points: [
+                {
+                  dryBulb: fromCelsius(from.dryBulbSI, unitSystem),
+                  humidityRatio: from.humidityRatio,
+                },
+                {
+                  dryBulb: fromCelsius(to.dryBulbSI, unitSystem),
+                  humidityRatio: to.humidityRatio,
+                },
+              ],
+            };
+          })
+          .filter((value): value is ChartProcess => Boolean(value));
+      });
+  }, [comparisonRuns, unitSystem]);
+
+  const chartProcesses = useMemo(
+    () => [...baseChartProcesses, ...overlayChartProcesses],
+    [baseChartProcesses, overlayChartProcesses]
+  );
 
   return (
     <div className="flex min-h-screen w-full flex-col bg-background text-foreground">
-      <div className="flex flex-1 flex-col overflow-hidden lg:flex-row">
-        <aside className="flex h-full w-full shrink-0 flex-col border-r border-border/60 bg-card/20 backdrop-blur-xl lg:w-auto lg:basis-[320px] xl:basis-[360px]">
-        <div className="flex h-full flex-col gap-3 overflow-y-auto p-4 md:p-5">
+      <div className="flex flex-1 flex-col overflow-hidden lg:h-screen lg:flex-row">
+        <aside className="flex h-full min-h-0 w-full shrink-0 flex-col border-r border-[hsla(var(--border),0.6)] bg-[hsla(var(--card),0.2)] backdrop-blur-xl lg:w-auto lg:basis-[320px] xl:basis-[360px]">
+        <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto p-4 md:p-5">
           <motion.div
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
@@ -544,7 +993,7 @@ export default function Home() {
             initial={{ opacity: 0, y: 14 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.45, delay: 0.05 }}
-            className="space-y-3 rounded-xl border border-border/60 bg-background/60 p-4"
+            className="space-y-3 rounded-xl border border-[hsla(var(--border),0.6)] bg-[hsla(var(--background),0.6)] p-4"
           >
             <p className="text-xs font-medium text-muted-foreground">
               Active units: {unitSystem === "si" ? "Metric (SI)" : "Imperial (IP)"}
@@ -561,7 +1010,7 @@ export default function Home() {
                   step={unitSystem === "si" ? 100 : 0.1}
                   value={inputs.pressure}
                   onChange={handleInputChange("pressure")}
-                  className="border-border/50 bg-background/70"
+                  className="border-[hsla(var(--border),0.5)] bg-[hsla(var(--background),0.7)]"
                 />
                 <p className="text-xs text-muted-foreground">
                   {unitSystem === "si" ? "Pa (absolute)" : "psia"}
@@ -577,7 +1026,7 @@ export default function Home() {
                   step={drynessStep}
                   value={inputs.dryBulb}
                   onChange={handleInputChange("dryBulb")}
-                  className="border-border/50 bg-background/70"
+                  className="border-[hsla(var(--border),0.5)] bg-[hsla(var(--background),0.7)]"
                 />
                 <Slider
                   value={[inputs.dryBulb]}
@@ -613,7 +1062,7 @@ export default function Home() {
                   step={humidityStep}
                   value={inputs.relativeHumidity}
                   onChange={handleInputChange("relativeHumidity")}
-                  className="border-border/50 bg-background/70"
+                  className="border-[hsla(var(--border),0.5)] bg-[hsla(var(--background),0.7)]"
                 />
                 <Slider
                   value={[inputs.relativeHumidity]}
@@ -634,7 +1083,7 @@ export default function Home() {
             </div>
 
             <Button
-              className="w-full border border-border/60 bg-background hover:bg-background/70"
+              className="w-full border border-[hsla(var(--border),0.6)] bg-background hover:bg-[hsla(var(--background),0.7)]"
               variant="outline"
               onClick={handleReset}
             >
@@ -646,20 +1095,20 @@ export default function Home() {
             initial={{ opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.18 }}
-            className="rounded-xl border border-border/60 bg-background/60 p-4"
+            className="rounded-xl border border-[hsla(var(--border),0.6)] bg-[hsla(var(--background),0.6)] p-4"
           >
             <Tabs defaultValue="properties" className="w-full">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <TabsList className="flex w-full gap-1 rounded-lg border border-border/50 bg-background/40 p-1 text-xs md:w-auto">
+                <TabsList className="flex w-full gap-1 rounded-lg border border-[hsla(var(--border),0.5)] bg-[hsla(var(--background),0.4)] p-1 text-xs md:w-auto">
                   <TabsTrigger
                     value="properties"
-                    className="h-auto rounded-md px-3 py-1 text-[11px] font-semibold data-[state=active]:bg-foreground/10 data-[state=active]:text-foreground"
+                    className="h-auto rounded-md px-3 py-1 text-[11px] font-semibold data-[state=active]:bg-[hsla(var(--foreground),0.1)] data-[state=active]:text-foreground"
                   >
                     Properties
                   </TabsTrigger>
                   <TabsTrigger
                     value="processes"
-                    className="h-auto rounded-md px-3 py-1 text-[11px] font-semibold data-[state=active]:bg-foreground/10 data-[state=active]:text-foreground"
+                    className="h-auto rounded-md px-3 py-1 text-[11px] font-semibold data-[state=active]:bg-[hsla(var(--foreground),0.1)] data-[state=active]:text-foreground"
                   >
                     Processes
                   </TabsTrigger>
@@ -685,7 +1134,7 @@ export default function Home() {
                   </span>
                 </div>
                 {invalidState && (
-                  <div className="mt-3 rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                  <div className="mt-3 rounded-lg border border-[hsla(var(--destructive),0.5)] bg-[hsla(var(--destructive),0.1)] px-3 py-2 text-xs text-destructive">
                     Current inputs do not map to a physical air state. Adjust your
                     dry bulb, humidity, or pressure.
                   </div>
@@ -694,7 +1143,7 @@ export default function Home() {
                   {properties.map((property) => (
                     <div
                       key={property.id}
-                      className="rounded-lg border border-border/40 bg-background/50 px-3 py-2"
+                      className="rounded-lg border border-[hsla(var(--border),0.4)] bg-[hsla(var(--background),0.5)] px-3 py-2"
                     >
                       <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
                         {property.label}
@@ -735,7 +1184,7 @@ export default function Home() {
                         return (
                           <div
                             key={point.id}
-                            className="flex flex-col gap-2 rounded-lg border border-border/40 bg-background/50 px-3 py-2"
+                            className="flex flex-col gap-2 rounded-lg border border-[hsla(var(--border),0.4)] bg-[hsla(var(--background),0.5)] px-3 py-2"
                           >
                             <div className="flex items-center gap-2">
                               <span
@@ -747,7 +1196,7 @@ export default function Home() {
                                 onChange={(event) =>
                                   handlePointLabelChange(point.id, event.target.value)
                                 }
-                                className="h-8 flex-1 border-border/40 bg-background/70 text-xs"
+                                className="h-8 flex-1 border-[hsla(var(--border),0.4)] bg-[hsla(var(--background),0.7)] text-xs"
                                 aria-label={`Label for ${point.label}`}
                               />
                               <Button
@@ -809,7 +1258,7 @@ export default function Home() {
                       onChange={(event) =>
                         handleProcessDraftChange("fromId", event.target.value)
                       }
-                      className="h-8 rounded-md border border-border/40 bg-background/70 px-2 text-[11px]"
+                      className="h-8 rounded-md border border-[hsla(var(--border),0.4)] bg-[hsla(var(--background),0.7)] px-2 text-[11px]"
                     >
                       <option value="">From</option>
                       {savedPoints.map((point) => (
@@ -823,7 +1272,7 @@ export default function Home() {
                       onChange={(event) =>
                         handleProcessDraftChange("toId", event.target.value)
                       }
-                      className="h-8 rounded-md border border-border/40 bg-background/70 px-2 text-[11px]"
+                      className="h-8 rounded-md border border-[hsla(var(--border),0.4)] bg-[hsla(var(--background),0.7)] px-2 text-[11px]"
                     >
                       <option value="">To</option>
                       {savedPoints.map((point) => (
@@ -837,7 +1286,7 @@ export default function Home() {
                       onChange={(event) =>
                         handleProcessDraftChange("kind", event.target.value)
                       }
-                      className="col-span-2 h-8 rounded-md border border-border/40 bg-background/70 px-2 text-[11px] sm:col-span-1"
+                      className="col-span-2 h-8 rounded-md border border-[hsla(var(--border),0.4)] bg-[hsla(var(--background),0.7)] px-2 text-[11px] sm:col-span-1"
                     >
                       <option value="heating">Heating</option>
                       <option value="cooling">Cooling</option>
@@ -853,6 +1302,78 @@ export default function Home() {
                       Add process
                     </Button>
                   </div>
+                <div className="space-y-2 rounded-xl border border-[hsla(var(--border),0.5)] bg-[hsla(var(--background),0.3)] p-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Comparison runs
+                    </p>
+                    {comparisonRuns.length > 0 && (
+                      <span className="text-[11px] text-muted-foreground">
+                        {comparisonRuns.filter((run) => run.active).length}/{comparisonRuns.length} visible
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <Input
+                      value={comparisonLabel}
+                      onChange={(event) => setComparisonLabel(event.target.value)}
+                      placeholder="Label this run"
+                      className="h-9 border-[hsla(var(--border),0.4)] bg-[hsla(var(--background),0.7)] text-xs"
+                    />
+                    <Button
+                      size="sm"
+                      onClick={handleSaveComparisonRun}
+                      disabled={savedPoints.length === 0}
+                      className="h-9 text-xs"
+                    >
+                      Save run
+                    </Button>
+                  </div>
+                  {comparisonRuns.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">
+                      Capture at least one point to create reusable overlays.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {comparisonRuns.map((run) => (
+                        <div
+                          key={run.id}
+                          className="rounded-lg border border-[hsla(var(--border),0.4)] bg-[hsla(var(--background),0.6)] p-3 text-xs"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <span
+                                className="inline-flex h-2.5 w-2.5 rounded-full"
+                                style={{ backgroundColor: run.color }}
+                              />
+                              <p className="font-semibold">{run.label}</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Switch
+                                id={`run-${run.id}`}
+                                checked={run.active}
+                                onCheckedChange={() => handleToggleRun(run.id)}
+                                aria-label={`Toggle ${run.label}`}
+                              />
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-muted-foreground"
+                                onClick={() => handleRemoveRun(run.id)}
+                              >
+                                ×
+                              </Button>
+                            </div>
+                          </div>
+                          <p className="mt-1 text-[11px] text-muted-foreground">
+                            {run.points.length} point{run.points.length === 1 ? "" : "s"} ·{" "}
+                            {run.processes.length} process{run.processes.length === 1 ? "" : "es"}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </TabsContent>
           </Tabs>
@@ -860,12 +1381,12 @@ export default function Home() {
       </div>
     </aside>
 
-        <main className="flex flex-1 min-w-0 flex-col bg-[#020202]">
+        <main className="flex flex-1 min-h-0 min-w-0 flex-col overflow-hidden bg-[#020202]">
           <motion.div
             initial={{ opacity: 0, y: -12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4, delay: 0.05 }}
-            className="flex flex-wrap items-center justify-between gap-4 border-b border-border/60 px-6 py-4"
+            className="flex flex-shrink-0 flex-wrap items-center justify-between gap-4 border-b border-[hsla(var(--border),0.6)] px-6 py-4"
           >
             <div>
               <p className="text-sm font-medium text-foreground">
@@ -875,7 +1396,7 @@ export default function Home() {
                 Scroll to zoom and reveal higher-resolution gridlines. Double-click to reset.
               </p>
             </div>
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-1 flex-wrap items-center justify-end gap-3">
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <span>Units</span>
                 <div className="inline-flex items-center gap-2">
@@ -888,7 +1409,7 @@ export default function Home() {
                   />
                   <span>IP</span>
                 </div>
-                <span className="text-[11px] text-muted-foreground/80">
+                <span className="text-[11px] text-[hsla(var(--muted-foreground),0.8)]">
                   {unitSystem === "si" ? "Metric" : "Imperial"}
                 </span>
               </div>
@@ -905,11 +1426,11 @@ export default function Home() {
                 <span>Enthalpy</span>
               </div>
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <span className="inline-flex h-2 w-2 rounded-full bg-emerald-400/80" />
+                <span className="inline-flex h-2 w-2 rounded-full bg-[rgba(52,211,153,0.8)]" />
                 <span>Wet Bulb</span>
               </div>
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <span className="inline-flex h-2 w-2 rounded-full bg-slate-400/70" />
+                <span className="inline-flex h-2 w-2 rounded-full bg-[rgba(148,163,184,0.7)]" />
                 <span>Specific Volume</span>
               </div>
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -934,121 +1455,131 @@ export default function Home() {
                   Hover crosshair
                 </Label>
               </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleCopySnapshotLink}
+                  className="h-8 text-xs"
+                >
+                  {shareStatus === "copied"
+                    ? "Link copied"
+                    : shareStatus === "error"
+                    ? "Clipboard blocked"
+                    : "Copy share link"}
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleExportPdf}
+                  disabled={isExportingPdf}
+                  className="h-8 text-xs"
+                >
+                  {isExportingPdf ? "Rendering…" : "Export PDF"}
+                </Button>
+              </div>
             </div>
           </motion.div>
 
-          <div className="flex-1 px-4 pb-4 pt-3 md:px-6 md:pb-6">
-            <div className="h-full rounded-2xl border border-border/60 bg-[#000000] shadow-ambient">
-              <PsychroChart
-                unitSystem={unitSystem}
-                pressure={inputs.pressure}
-                selectedState={psychroState ?? undefined}
-                onSelectState={handleChartState}
-                zoomLocked={zoomLocked}
-                showHoverCrosshair={showHoverCrosshair}
-                statePoints={chartStatePoints}
-                processes={chartProcesses}
-              />
+          <div className="flex flex-1 min-h-0 flex-col overflow-hidden px-4 pb-4 pt-3 md:px-6 md:pb-6">
+            <div
+              ref={exportRef}
+              className="flex h-full w-full flex-col rounded-2xl border border-[hsla(var(--border),0.6)] bg-[hsla(var(--background),0.4)] p-3 shadow-ambient"
+            >
+              <div className="flex h-full w-full overflow-hidden rounded-xl bg-[#000000]">
+                <PsychroChart
+                  unitSystem={unitSystem}
+                  pressure={inputs.pressure}
+                  selectedState={psychroState ?? undefined}
+                  onSelectState={handleChartState}
+                  zoomLocked={zoomLocked}
+                  showHoverCrosshair={showHoverCrosshair}
+                  statePoints={chartStatePoints}
+                  processes={chartProcesses}
+                />
+              </div>
             </div>
           </div>
         </main>
       </div>
 
       <section
-        id="features"
-        className="border-t border-border/60 bg-background px-6 py-12 text-foreground"
-        aria-labelledby="features-heading"
+        id="templates"
+        className="border-t border-[hsla(var(--border),0.6)] bg-background px-6 py-12 text-foreground"
+        aria-labelledby="templates-heading"
       >
-        <div className="mx-auto flex max-w-6xl flex-col gap-8">
+        <div className="mx-auto max-w-6xl space-y-8">
           <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Engineering context
+                Scenario presets
               </p>
-              <h2 id="features-heading" className="text-2xl font-semibold tracking-tight">
-                Tell clearer HVAC stories with defensible data
+              <h2 id="templates-heading" className="text-2xl font-semibold tracking-tight">
+                Drop-in HVAC templates
               </h2>
               <p className="text-sm text-muted-foreground">
-                Blend chart interactions with narrative-ready highlights for workshops, submittals,
-                and design reviews.
+                Apply or overlay DOAS, data hall, and greenhouse loops to jumpstart your analysis.
               </p>
             </div>
-            <a
-              href="#faq"
-              className="text-sm font-semibold text-primary hover:underline"
-              aria-label="Jump to frequently asked questions"
-            >
-              Jump to FAQ →
-            </a>
           </div>
           <div className="grid gap-6 md:grid-cols-3">
-            {FEATURE_SECTIONS.map((feature) => (
+            {SCENARIO_TEMPLATES.map((template) => (
               <article
-                key={feature.title}
-                className="rounded-2xl border border-border/60 bg-card/30 p-6 shadow-sm backdrop-blur"
+                key={template.id}
+                className={`rounded-2xl border px-4 py-4 text-sm shadow-sm backdrop-blur ${
+                  activeTemplateId === template.id
+                    ? "border-[rgba(52,211,153,0.8)] bg-[rgba(52,211,153,0.1)]"
+                    : "border-[hsla(var(--border),0.6)] bg-[hsla(var(--card),0.4)]"
+                }`}
               >
-                <h3 className="text-lg font-semibold">{feature.title}</h3>
-                <p className="mt-2 text-sm text-muted-foreground">{feature.description}</p>
-                <ul className="mt-4 space-y-2 text-sm text-foreground/80">
-                  {feature.bullets.map((bullet) => (
-                    <li key={bullet} className="flex items-start gap-2">
-                      <span className="mt-1 inline-block h-2 w-2 rounded-full bg-emerald-400" />
-                      <span>{bullet}</span>
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <h3 className="text-lg font-semibold">{template.name}</h3>
+                    <p className="text-xs text-muted-foreground">{template.summary}</p>
+                  </div>
+                  {activeTemplateId === template.id && (
+                    <span className="text-[11px] font-semibold uppercase text-emerald-400">
+                      Active
+                    </span>
+                  )}
+                </div>
+                <ul className="mt-3 space-y-1 text-xs text-muted-foreground">
+                  {template.insights.map((tip) => (
+                    <li key={tip} className="flex items-start gap-2">
+                      <span className="mt-1 inline-block h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                      <span>{tip}</span>
                     </li>
                   ))}
                 </ul>
+                <div className="mt-4 flex flex-wrap gap-2 text-[11px]">
+                  {template.points.map((point) => (
+                    <span
+                      key={point.label}
+                      className="rounded-full border border-[hsla(var(--border),0.6)] px-2 py-0.5 text-muted-foreground"
+                    >
+                      {point.label}: {point.dryBulb}° / {point.relativeHumidity}%
+                    </span>
+                  ))}
+                </div>
+                <div className="mt-4 flex flex-col gap-2">
+                  <Button size="sm" className="text-xs" onClick={() => handleApplyTemplate(template.id)}>
+                    Apply template
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-xs"
+                    onClick={() => handleOverlayTemplate(template.id)}
+                  >
+                    Overlay on chart
+                  </Button>
+                </div>
               </article>
             ))}
           </div>
         </div>
       </section>
 
-      <section
-        id="faq"
-        className="border-t border-border/60 bg-background px-6 py-12 text-foreground"
-        aria-labelledby="faq-heading"
-        itemScope
-        itemType="https://schema.org/FAQPage"
-      >
-        <div className="mx-auto max-w-4xl space-y-6">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Frequently asked questions
-            </p>
-            <h2 id="faq-heading" className="text-2xl font-semibold tracking-tight">
-              Everything you need to ship better HVAC documentation
-            </h2>
-          </div>
-          <div className="space-y-4">
-            {FAQ_ITEMS.map((item) => (
-              <details
-                key={item.question}
-                className="group rounded-2xl border border-border/60 bg-card/30 p-4"
-                itemProp="mainEntity"
-                itemScope
-                itemType="https://schema.org/Question"
-              >
-                <summary className="flex cursor-pointer list-none items-center justify-between text-base font-medium">
-                  <span itemProp="name">{item.question}</span>
-                  <span className="text-xl text-muted-foreground transition group-open:rotate-45">
-                    +
-                  </span>
-                </summary>
-                <div
-                  className="mt-3 text-sm text-muted-foreground"
-                  itemProp="acceptedAnswer"
-                  itemScope
-                  itemType="https://schema.org/Answer"
-                >
-                  <p itemProp="text">{item.answer}</p>
-                </div>
-              </details>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <footer className="border-t border-border/60 bg-background/80 px-6 py-4 text-xs text-muted-foreground">
+      <footer className="border-t border-[hsla(var(--border),0.6)] bg-[hsla(var(--background),0.8)] px-6 py-4 text-xs text-muted-foreground">
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <span>&copy; {new Date().getFullYear()} Katakuri</span>
           <nav className="flex flex-wrap items-center gap-4">

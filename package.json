@@ -21,6 +21,8 @@
     "clsx": "^2.1.1",
     "d3": "^7.9.0",
     "framer-motion": "^11.11.17",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^3.0.3",
     "lucide-react": "^0.462.0",
     "next": "16.0.3",
     "psychrolib": "^1.1.1",

@@ -19,8 +19,12 @@
 - **Interactive charting** – zoom, pan, hover crosshair, and click-to-lock markers with millidegree/hour precision.
 - **Multiple overlays** – saturation, relative humidity, enthalpy, wet-bulb, and specific-volume lines that densify as you zoom.
 - **Unit-aware UI** – instantly flip between SI and IP units; all inputs and outputs update in sync.
-- **Built-in analytics** – Vercel Analytics tracks visits and page views with zero config post-deploy.
+- **Scenario templates** – preload DOAS, data center, and greenhouse loops or overlay them for comparisons.
+- **Comparison runs** – snapshot chart states, toggle visibility, and layer multiple processes at once.
+- **Shareable snapshots** – encode the full UI state into URLs for quick collaboration.
+- **PDF export** – capture the chart + live properties in a ready-to-send document.
 - **Responsive dark UI** – AMOLED-ready layout with condensed control panel and live property table.
+- **Built-in analytics** – Vercel Analytics tracks visits and page views with zero config post-deploy.
 
 ## Getting Started
 

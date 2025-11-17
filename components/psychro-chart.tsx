@@ -53,6 +53,15 @@ type ChartProcessLine = {
   points: Array<{ dryBulb: number; humidityRatio: number }>;
 };
 
+type ChartAnnotation = {
+  id: string;
+  label: string;
+  color: string;
+  dryBulb: number;
+  humidityRatio: number;
+  text: string;
+};
+
 export interface PsychroChartProps {
   unitSystem: UnitSystem;
   pressure: number;
@@ -62,6 +71,7 @@ export interface PsychroChartProps {
   showHoverCrosshair?: boolean;
   statePoints?: ChartMarker[];
   processes?: ChartProcessLine[];
+  annotations?: ChartAnnotation[];
 }
 
 const useContainerSize = () => {
@@ -99,6 +109,7 @@ export function PsychroChart({
   showHoverCrosshair = true,
   statePoints = [],
   processes = [],
+  annotations = [],
 }: PsychroChartProps) {
   const { ref: containerRef, width, height } = useContainerSize();
   const svgRef = useRef<SVGSVGElement>(null);
@@ -696,7 +707,7 @@ export function PsychroChart({
             </linearGradient>
           </defs>
           <g transform={`translate(${MARGINS.left},${MARGINS.top})`}>
-            <g className="stroke-border/30" clipPath="url(#chart-clip)">
+            <g className="stroke-[hsla(var(--border),0.3)]" clipPath="url(#chart-clip)">
               {xTicks.map((tick) => (
                 <line
                   key={`grid-x-${tick}`}
@@ -837,6 +848,63 @@ export function PsychroChart({
                     fontSize={11}
                   >
                     {point.label}
+                  </text>
+                </g>
+              );
+            })}
+
+            {annotations.map((annotation) => {
+              const xPosition = xScale(annotation.dryBulb);
+              const yPosition = yScale(
+                humidityRatioToDisplay(unitSystem, annotation.humidityRatio)
+              );
+              const circleY = yPosition;
+              const circleX = xPosition;
+              const textLength = annotation.text.length;
+              const bubbleWidth = Math.min(Math.max(textLength * 5 + 80, 140), 260);
+              const bubbleHeight = 52;
+              const bubbleX = Math.min(
+                Math.max(circleX + 16, 0),
+                innerWidth - bubbleWidth
+              );
+              const bubbleY = Math.max(circleY - bubbleHeight - 12, 8);
+
+              return (
+                <g key={annotation.id} className="pointer-events-none">
+                  <circle
+                    cx={circleX}
+                    cy={circleY}
+                    r={5.5}
+                    fill={annotation.color}
+                    stroke="#0f172a"
+                    strokeWidth={1.4}
+                  />
+                  <rect
+                    x={bubbleX}
+                    y={bubbleY}
+                    width={bubbleWidth}
+                    height={bubbleHeight}
+                    rx={12}
+                    ry={12}
+                    fill="rgba(15, 23, 42, 0.9)"
+                    stroke={annotation.color}
+                    strokeWidth={1}
+                  />
+                  <text
+                    x={bubbleX + 12}
+                    y={bubbleY + 18}
+                    fill="#e2e8f0"
+                    fontSize={11}
+                  >
+                    <tspan fontWeight={600}>{annotation.label}</tspan>
+                    <tspan
+                      x={bubbleX + 12}
+                      dy="1.4em"
+                      fontSize={10}
+                      fill="#cbd5f5"
+                    >
+                      {annotation.text}
+                    </tspan>
                   </text>
                 </g>
               );
@@ -1004,14 +1072,14 @@ export function PsychroChart({
             <span className="text-sm font-medium tracking-wide">
               Initializing psychrometric canvas…
             </span>
-            <span className="text-xs text-muted-foreground/70">
+            <span className="text-xs text-[hsla(var(--muted-foreground),0.7)]">
               Resize-aware chart boots immediately after hydration.
             </span>
           </motion.div>
         </div>
       )}
       {zoomLocked && (
-        <div className="pointer-events-none absolute right-4 top-4 flex items-center gap-2 rounded-full border border-border/60 bg-background/80 px-3 py-1 text-xs font-medium text-muted-foreground shadow-ambient backdrop-blur">
+        <div className="pointer-events-none absolute right-4 top-4 flex items-center gap-2 rounded-full border border-[hsla(var(--border),0.6)] bg-[hsla(var(--background),0.8)] px-3 py-1 text-xs font-medium text-muted-foreground shadow-ambient backdrop-blur">
           Zoom locked
         </div>
       )}

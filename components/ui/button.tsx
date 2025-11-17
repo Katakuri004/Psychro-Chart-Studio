@@ -12,12 +12,12 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          "bg-primary text-primary-foreground shadow-ambient hover:bg-primary/90",
+          "bg-primary text-primary-foreground shadow-ambient hover:bg-[hsla(var(--primary),0.9)]",
         secondary:
-          "bg-secondary text-secondary-foreground shadow hover:bg-secondary/80",
+          "bg-secondary text-secondary-foreground shadow hover:bg-[hsla(var(--secondary),0.8)]",
         outline:
-          "border border-input bg-transparent text-foreground hover:bg-foreground/10",
-        ghost: "text-foreground hover:bg-foreground/10",
+          "border border-input bg-transparent text-foreground hover:bg-[hsla(var(--foreground),0.1)]",
+        ghost: "text-foreground hover:bg-[hsla(var(--foreground),0.1)]",
         link: "text-primary underline-offset-4 hover:underline",
       },
       size: {
