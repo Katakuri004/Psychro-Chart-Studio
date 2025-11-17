@@ -130,6 +130,7 @@ type ScenarioTemplate = {
   id: string;
   name: string;
   summary: string;
+  tags: string[];
   inputs: Record<UnitSystem, PsychroInputs>;
   points: ScenarioTemplatePoint[];
   processes: ScenarioTemplateProcess[];
@@ -176,6 +177,7 @@ const SCENARIO_TEMPLATES: ScenarioTemplate[] = [
     id: "doas",
     name: "DOAS Commissioning",
     summary: "Dedicated outdoor air stream staged through energy recovery and cooling coils.",
+    tags: ["ventilation", "dehumidification", "latency", "coils"],
     insights: [
       "Target coil leaving dew point < 12°C (54°F) for latent control.",
       "Parallel terminals reheat to room-neutral supply.",
@@ -217,6 +219,7 @@ const SCENARIO_TEMPLATES: ScenarioTemplate[] = [
     id: "data-center",
     name: "Data Hall Loop",
     summary: "CRAH coil loop between cold aisle supply and hot aisle return.",
+    tags: ["data", "crah", "it", "sensible"],
     insights: [
       "Maintain dew point margin > 6°C (10°F).",
       "Overlay with sensor data to validate ΔT.",
@@ -258,6 +261,7 @@ const SCENARIO_TEMPLATES: ScenarioTemplate[] = [
     id: "greenhouse",
     name: "Greenhouse Daycycle",
     summary: "Track evapotranspiration from dawn to purge.",
+    tags: ["agriculture", "humidification", "greenhouse"],
     insights: [
       "Plan vents before humidity ratio crosses 0.014 kg/kg.",
       "Evening purge protects structures overnight.",
@@ -293,6 +297,126 @@ const SCENARIO_TEMPLATES: ScenarioTemplate[] = [
     processes: [
       { fromLabel: "AM", toLabel: "PD", kind: "heating" },
       { fromLabel: "PD", toLabel: "EV", kind: "mixing" },
+    ],
+  },
+  {
+    id: "museum",
+    name: "Museum Preservation",
+    summary: "Tightly control temperature and RH to protect artifacts.",
+    tags: ["museum", "conservation", "precise"],
+    insights: [
+      "Keep RH between 45-55% year-round.",
+      "Use mild reheat to avoid condensation on casing.",
+    ],
+    inputs: createTemplateInputs({
+      pressure: 101_325,
+      dryBulb: 22,
+      relativeHumidity: 50,
+    }),
+    points: [
+      { label: "Ambient", dryBulb: 32, relativeHumidity: 65, color: "#60a5fa", note: "Summer condition" },
+      { label: "Cooling Coil", dryBulb: 16, relativeHumidity: 95, color: "#a855f7", note: "Coil leaving" },
+      { label: "Gallery", dryBulb: 22, relativeHumidity: 50, color: "#34d399", note: "Exhibit target" },
+    ],
+    processes: [
+      { fromLabel: "Ambient", toLabel: "Cooling Coil", kind: "cooling" },
+      { fromLabel: "Cooling Coil", toLabel: "Gallery", kind: "heating" },
+    ],
+  },
+  {
+    id: "ice-rink",
+    name: "Ice Rink Envelope",
+    summary: "Control fog and condensation above the ice surface.",
+    tags: ["ice", "rink", "dehumidifier", "sports"],
+    insights: [
+      "Lower dew point to stay below slab temperature.",
+      "Mix dehumidified OA with recirculated air to limit fog.",
+    ],
+    inputs: createTemplateInputs({
+      pressure: 101_325,
+      dryBulb: 15,
+      relativeHumidity: 50,
+    }),
+    points: [
+      { label: "Return", dryBulb: 12, relativeHumidity: 70, color: "#38bdf8", note: "Moist return" },
+      { label: "Desiccant", dryBulb: 20, relativeHumidity: 30, color: "#f472b6", note: "Desiccant outlet" },
+      { label: "Supply", dryBulb: 8, relativeHumidity: 50, color: "#facc15", note: "Supply to bowl" },
+    ],
+    processes: [
+      { fromLabel: "Return", toLabel: "Desiccant", kind: "humidifying" },
+      { fromLabel: "Desiccant", toLabel: "Supply", kind: "cooling" },
+    ],
+  },
+  {
+    id: "hospital-or",
+    name: "Hospital Operating Room",
+    summary: "Low-humidity, high-ventilation air for sterile environments.",
+    tags: ["healthcare", "sterile", "ventilation"],
+    insights: [
+      "Keep coil leaving dew point below 12 °C to protect surgical suites.",
+      "Blend slight reheat to meet 20 °C / 50% RH space targets.",
+    ],
+    inputs: createTemplateInputs({
+      pressure: 101_325,
+      dryBulb: 22,
+      relativeHumidity: 45,
+    }),
+    points: [
+      { label: "OA", dryBulb: 32, relativeHumidity: 60, note: "Outdoor design" },
+      { label: "Coil", dryBulb: 14, relativeHumidity: 95, note: "Cooling coil outlet" },
+      { label: "OR", dryBulb: 20, relativeHumidity: 50, note: "Operating room setpoint" },
+    ],
+    processes: [
+      { fromLabel: "OA", toLabel: "Coil", kind: "cooling" },
+      { fromLabel: "Coil", toLabel: "OR", kind: "heating" },
+    ],
+  },
+  {
+    id: "indoor-pool",
+    name: "Indoor Natatorium",
+    summary: "Balance swimmer comfort with envelope protection.",
+    tags: ["recreation", "latent", "purge"],
+    insights: [
+      "Operate near 60% RH to limit corrosion.",
+      "Night purge trims dew point to safeguard glazing.",
+    ],
+    inputs: createTemplateInputs({
+      pressure: 100_000,
+      dryBulb: 28,
+      relativeHumidity: 60,
+    }),
+    points: [
+      { label: "Morning", dryBulb: 26, relativeHumidity: 70, note: "Pre-occupancy" },
+      { label: "Peak", dryBulb: 30, relativeHumidity: 60, note: "Swim meet condition" },
+      { label: "Purge", dryBulb: 22, relativeHumidity: 50, note: "Night exhaust" },
+    ],
+    processes: [
+      { fromLabel: "Morning", toLabel: "Peak", kind: "heating" },
+      { fromLabel: "Peak", toLabel: "Purge", kind: "cooling" },
+    ],
+  },
+  {
+    id: "brewery-cellar",
+    name: "Brewery Fermentation Cellar",
+    summary: "Control latent loads from fermenters and trim for packaging.",
+    tags: ["brewery", "process", "latent"],
+    insights: [
+      "Capture moist tank exhaust before blending into the cellar.",
+      "Deliver 16 °C supply to keep packaging lines dry.",
+    ],
+    inputs: createTemplateInputs({
+      pressure: 99_500,
+      dryBulb: 20,
+      relativeHumidity: 65,
+    }),
+    points: [
+      { label: "Ferment", dryBulb: 28, relativeHumidity: 80, note: "Tank exhaust" },
+      { label: "Cellar", dryBulb: 20, relativeHumidity: 60, note: "Ambient hall" },
+      { label: "Transfer", dryBulb: 16, relativeHumidity: 55, note: "Blend to packaging" },
+    ],
+    processes: [
+      { fromLabel: "Ferment", toLabel: "Cellar", kind: "cooling" },
+      { fromLabel: "Cellar", toLabel: "Transfer", kind: "cooling" },
     ],
   },
 ];
@@ -528,6 +652,7 @@ export default function Home() {
   const [comparisonRuns, setComparisonRuns] = useState<ComparisonRun[]>([]);
   const [comparisonLabel, setComparisonLabel] = useState("Run 1");
   const [activeTemplateId, setActiveTemplateId] = useState<string | null>(null);
+  const [templateSearch, setTemplateSearch] = useState("");
   const [shareStatus, setShareStatus] = useState<"idle" | "copied" | "error">(
     "idle"
   );
@@ -591,6 +716,21 @@ export default function Home() {
     () => getChartExtents(unitSystem),
     [unitSystem]
   );
+
+  const filteredTemplates = useMemo(() => {
+    const term = templateSearch.trim().toLowerCase();
+    if (!term) return SCENARIO_TEMPLATES;
+    return SCENARIO_TEMPLATES.filter((template) => {
+      const haystack = [
+        template.name,
+        template.summary,
+        template.tags.join(" "),
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(term);
+    });
+  }, [templateSearch]);
 
   const psychroState = useMemo(
     () => computePsychrometrics(inputs, unitSystem),
@@ -1029,6 +1169,7 @@ export default function Home() {
                   className="border-[hsla(var(--border),0.5)] bg-[hsla(var(--background),0.7)]"
                 />
                 <Slider
+                  aria-label="Dry bulb temperature slider"
                   value={[inputs.dryBulb]}
                   min={chartExtents.dryBulb[0]}
                   max={chartExtents.dryBulb[1]}
@@ -1065,6 +1206,7 @@ export default function Home() {
                   className="border-[hsla(var(--border),0.5)] bg-[hsla(var(--background),0.7)]"
                 />
                 <Slider
+                  aria-label="Relative humidity slider"
                   value={[inputs.relativeHumidity]}
                   min={0}
                   max={100}
@@ -1508,7 +1650,7 @@ export default function Home() {
         aria-labelledby="templates-heading"
       >
         <div className="mx-auto max-w-6xl space-y-8">
-          <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Scenario presets
@@ -1520,9 +1662,39 @@ export default function Home() {
                 Apply or overlay DOAS, data hall, and greenhouse loops to jumpstart your analysis.
               </p>
             </div>
+            <div className="w-full max-w-sm">
+              <Label htmlFor="template-search" className="sr-only">
+                Search templates
+              </Label>
+              <div className="relative">
+                <Input
+                  id="template-search"
+                  placeholder="Search templates (e.g. data, museum, ice)"
+                  value={templateSearch}
+                  onChange={(event) => setTemplateSearch(event.target.value)}
+                  className="w-full pr-8"
+                  aria-label="Search scenario templates"
+                />
+                {templateSearch && (
+                  <button
+                    type="button"
+                    aria-label="Clear template search"
+                    className="absolute inset-y-0 right-2 flex items-center text-lg text-muted-foreground hover:text-foreground"
+                    onClick={() => setTemplateSearch("")}
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
           <div className="grid gap-6 md:grid-cols-3">
-            {SCENARIO_TEMPLATES.map((template) => (
+            {filteredTemplates.length === 0 && (
+              <p className="col-span-full text-sm text-muted-foreground">
+                No templates match “{templateSearch}”. Try searching for ventilation, museum, greenhouse, or ice rink.
+              </p>
+            )}
+            {filteredTemplates.map((template) => (
               <article
                 key={template.id}
                 className={`rounded-2xl border px-4 py-4 text-sm shadow-sm backdrop-blur ${
@@ -1551,6 +1723,16 @@ export default function Home() {
                   ))}
                 </ul>
                 <div className="mt-4 flex flex-wrap gap-2 text-[11px]">
+                  {template.tags.map((tag) => (
+                    <span
+                      key={`${template.id}-${tag}`}
+                      className="rounded-full bg-[hsla(var(--background),0.6)] px-2 py-0.5 text-muted-foreground"
+                    >
+                      #{tag}
+                    </span>
+                  ))}
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
                   {template.points.map((point) => (
                     <span
                       key={point.label}
